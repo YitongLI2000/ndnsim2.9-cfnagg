@@ -39,6 +39,8 @@
 #include "table/dead-nonce-list.hpp"
 #include "table/network-region-table.hpp"
 
+#include "sliding-window.hpp" //! Added by Yitong
+
 namespace nfd {
 
 namespace fw {
@@ -58,6 +60,47 @@ public:
 
   NFD_VIRTUAL_WITH_TESTS
   ~Forwarder();
+
+
+
+  //! Added by Yitong, set node name in forwarder
+  // Add a setter for the node name
+  void 
+  setNodeName(const std::string& name)
+  {
+    m_nodeName = name;
+  }
+
+  // Add a getter for the node name
+  const std::string& 
+  getNodeName() const
+  {
+    return m_nodeName;
+  }
+
+  //! Added by Yitong, for forwarder's throughput measurement
+  /**
+   * Open and clear the file
+   * @param filename
+   */
+  void
+  OpenFile(const std::string& filename);
+
+  /**
+   * Get the current data rate
+   * @return data rate
+   */
+  double
+  GetDataRate();
+
+  /**
+   * Throughput recorder
+   */
+  void
+  ThroughputRecorder();
+
+
+
 
   const ForwarderCounters&
   getCounters() const
@@ -255,6 +298,13 @@ NFD_PUBLIC_WITH_TESTS_ELSE_PRIVATE:
   Config m_config;
 
 private:
+  //! Added by Yitong
+  std::string m_nodeName; // Store the node name
+  utils::SlidingWindow<double> m_qsSlidingWindows;
+  std::string fwdFolderPath = "src/ndnSIM/results/logs/fwd";
+  std::string forwarder_recorder;
+
+
   ForwarderCounters m_counters;
 
   FaceTable& m_faceTable;

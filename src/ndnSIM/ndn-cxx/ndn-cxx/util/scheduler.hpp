@@ -26,6 +26,9 @@
 #include "ndn-cxx/detail/cancel-handle.hpp"
 #include "ndn-cxx/util/time.hpp"
 
+//! Fixed by Yitong
+#include<optional>
+
 #include "ns3/simulator.h"
 
 #include <set>

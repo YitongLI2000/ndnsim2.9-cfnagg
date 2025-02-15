@@ -26,8 +26,21 @@
 #include "model/ndn-app-link-service.hpp"
 #include "model/null-transport.hpp"
 
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <map>
+
+
+//#include "aggregationTree.hpp"
+#include "src/ndnSIM/apps/algorithm/include/AggregationTree.hpp"
+#include "src/ndnSIM/apps/algorithm/utility/utility.hpp"
+
+
 NS_LOG_COMPONENT_DEFINE("ndn.App");
 
+namespace fs = std::filesystem;
 namespace ns3 {
 namespace ndn {
 
@@ -77,6 +90,128 @@ App::App()
 App::~App()
 {
 }
+
+
+/**
+ * Actual function is implemented in consumer
+ */
+void
+App::ConstructAggregationTree() {
+
+}
+
+
+
+/**
+ * Return all child nodes for given map and parent node, not called for now
+ * @param key parent node
+ * @param treeMap given mapping
+ * @return
+ */
+std::set<std::string>
+App::findLeafNodes(const std::string& key, const std::map<std::string, std::vector<std::string>>& treeMap)
+{
+    std::set<std::string> result;
+    auto it = treeMap.find(key);
+    if (it != treeMap.end()) {
+        for (const auto& subkey : it->second) {
+            if (treeMap.find(subkey) != treeMap.end()) {
+                auto subResult = findLeafNodes(subkey, treeMap);
+                result.insert(subResult.begin(), subResult.end());
+            } else {
+                result.insert(subkey);
+            }
+        }
+    }
+    return result;
+}
+
+
+
+/**
+ * Return a mapping (key: child node, value: leaf nodes connected at the upstream tier - producers)
+ * E.g. {agg0: [pro0, pro1]}
+ * @param key parent node
+ * @param treeMap input mapping
+ * @return
+ */
+std::map<std::string, std::set<std::string>>
+App::getLeafNodes(const std::string& key, const std::map<std::string, std::vector<std::string>>& treeMap)
+{
+    std::map<std::string, std::set<std::string>> result;
+    auto it = treeMap.find(key);
+    if (it != treeMap.end()) {
+        for (const auto& subkey : it->second) {
+            if (treeMap.find(subkey) != treeMap.end()) {
+                result[subkey] = findLeafNodes(subkey, treeMap);
+            } else {
+                result[subkey].insert(subkey);
+            }
+        }
+    }
+    return result;
+}
+
+
+
+/**
+ * Return round index
+ * @param roundVec vector consists all related nodes (aggregator) in one iteration
+ * @param target target node
+ * @return
+ */
+int
+App::findRoundIndex(const std::vector<std::vector<std::string>>& roundVec, const std::string& target)
+{
+    for (int i = 0; i < roundVec.size(); ++i) {
+        for (int j = 0; j < roundVec[i].size(); ++j) {
+            if (roundVec[i][j] == target) {
+                return i; // Return index
+            }
+        }
+    }
+    std::cout << "Error! Can't find round index" << std::endl;
+    return -1;
+}
+
+
+
+/**
+ * Check whether this folder exists, if not, create it
+ * @param path
+ */
+void
+App::CheckDirectoryExist(const std::string& path)
+{
+    if (!fs::exists(path)) {
+        if (!fs::create_directories(path)) {
+            std::cerr << "Failed to create directory: " << path << std::endl;
+            exit(EXIT_FAILURE); // Stop execution if unable to create directory
+        }
+    }
+}
+
+
+
+/**
+ * Open and clear the file
+ * @param filename
+ */
+void
+App::OpenFile(const std::string& filename)
+{
+    std::ofstream file(filename, std::ofstream::out | std::ofstream::trunc);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open the file: " << filename << std::endl;
+    }
+    // ToDo: for testing, delete later
+    else {
+        //std::cout << "Open " << filename << " successfully!" << std::endl;
+    }
+    file.close();
+}
+
+
 
 void
 App::DoInitialize()

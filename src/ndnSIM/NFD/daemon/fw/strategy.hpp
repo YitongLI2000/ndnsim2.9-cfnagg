@@ -432,10 +432,11 @@ private: // registry
 protected: // accessors
   signal::Signal<FaceTable, Face>& afterAddFace;
   signal::Signal<FaceTable, Face>& beforeRemoveFace;
+  //! Changed by Yitong, Change Forwarder from "private" to "protected"
+  Forwarder& m_forwarder;  
 
 private: // instance fields
   Name m_name;
-  Forwarder& m_forwarder;
   MeasurementsAccessor m_measurements;
 };
 

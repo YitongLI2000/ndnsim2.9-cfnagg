@@ -1,0 +1,192 @@
+
+
+
+/**
+ * Bandwidth estimation
+ * @param prefix flow
+ * @param dataArrivalRate data arrival rate
+ */
+void
+Aggregator::BandwidthEstimation(std::string prefix, double qsfUpstream)
+{
+    Time arrivalTime = Simulator::Now();
+    
+    if (qsfUpstream == -1) {
+        // Aggregator which connects to producers directly
+        double localQueue = static_cast<double>(std::max(interestQueue[prefix].size(), sumParameters.size()));
+        NS_LOG_INFO("Use local queue size as qsf: " << localQueue);
+        m_qsfSlidingWindows[prefix].AddPacket(arrivalTime, localQueue);
+    } else {
+        // Other aggregators
+        NS_LOG_INFO("Upstream qsf: " << qsfUpstream);
+        m_qsfSlidingWindows[prefix].AddPacket(arrivalTime, qsfUpstream);
+    }
+
+    double aveQSF = m_qsfSlidingWindows[prefix].GetAverageQsf();
+    double dataArrivalRate = GetDataRate(prefix);
+
+    // Error handling
+    if (aveQSF == -1) {
+        NS_LOG_INFO("Returned QSF is -1, please check!");
+        Simulator::Stop();
+        return;
+    }
+
+    // Update bandwidth estimation
+    if (dataArrivalRate == 0) {
+        NS_LOG_INFO("Data rate is 0, don't update bandwidth.");
+    } else {
+        if (aveQSF > m_qsfQueueThreshold) {
+            m_estimatedBW[prefix] = dataArrivalRate;
+        }
+
+        if (dataArrivalRate > m_estimatedBW[prefix]) {
+            m_estimatedBW[prefix] = dataArrivalRate;
+        }        
+    }
+
+
+    NS_LOG_INFO("Flow: " << prefix << 
+                " - Average QSF: " << aveQSF << 
+                ", Arrival Rate: " << dataArrivalRate * 1000  << 
+                " pkgs/ms, Bandwidth estimation: " << m_estimatedBW[prefix] * 1000  << " pkgs/ms");
+}
+
+
+
+/**
+ * Update each flow's rate limit.
+ */
+void
+Aggregator::RateLimitUpdate(std::string prefix)
+{
+    double qsf = m_qsfSlidingWindows[prefix].GetAverageQsf();
+    NS_LOG_INFO("Flow " << prefix << " - qsf: " << qsf);
+        
+    // Congestion control
+    if (m_estimatedBW[prefix] != 0) {
+        if (qsf > 2 * m_qsfQueueThreshold) {
+            m_rateLimit[prefix] = m_estimatedBW[prefix] * m_qsfMDFactor;
+            NS_LOG_INFO("Congestion detected. Update rate limit: " << m_rateLimit[prefix] * 1000 << " pkgs/ms");
+        } else {
+            m_rateLimit[prefix] = m_estimatedBW[prefix];
+            NS_LOG_INFO("No congestion. Update rate limit by estimated BW: " << m_rateLimit[prefix] * 1000  << " pkgs/ms");
+        }        
+    }
+
+    // Rate probing
+    if (qsf < m_qsfQueueThreshold) {
+        m_rateLimit[prefix] = m_rateLimit[prefix] * m_qsfRPFactor;
+        NS_LOG_INFO("Start rate probing. Updated rate limit: " << m_rateLimit[prefix] * 1000  << " pkgs/ms");
+    }
+    
+    // Error handling
+    if (RTT_estimation_qsf[prefix] == 0) {
+        NS_LOG_INFO("RTT estimation is 0, please check!");
+        Simulator::Stop();
+        return;
+    }
+    
+    NS_LOG_INFO("Flow " << prefix << " - Schedule next rate limit update after " << static_cast<double>(RTT_estimation_qsf[prefix] / 1000) << " ms");
+    m_rateEvent[prefix] = Simulator::Schedule(MicroSeconds(RTT_estimation_qsf[prefix]), &Aggregator::RateLimitUpdate, this, prefix);
+}
+
+
+
+
+
+
+
+
+/**
+ * Bandwidth estimation
+ * @param prefix flow
+ * @param dataArrivalRate data arrival rate
+ */
+void
+Consumer::BandwidthEstimation(std::string prefix, double qsfUpstream)
+{
+    Time arrivalTime = Simulator::Now();
+    
+    if (qsfUpstream == -1) {
+        // Upstream aggregator which connects to producers directly
+        double localQueue = static_cast<double>(std::max(interestQueue[prefix].size(), partialAggResult.size()));
+        m_qsfSlidingWindows[prefix].AddPacket(arrivalTime, localQueue);
+    } else {
+        // Other aggregators
+        m_qsfSlidingWindows[prefix].AddPacket(arrivalTime, qsfUpstream);
+    }
+
+    double aveQSF = m_qsfSlidingWindows[prefix].GetAverageQsf();
+    double dataArrivalRate = GetDataRate(prefix);
+
+    // Correction for qsf and data arrival rate
+    if (aveQSF == -1) {
+        NS_LOG_INFO("Returned QSF is -1, please check!");
+        Simulator::Stop();
+        return;
+    }
+
+    // Update bandwidth estimation
+    if (dataArrivalRate == 0) {
+        NS_LOG_INFO("Data rate is 0, don't update bandwidth.");
+    } else {
+        if (aveQSF > m_qsfQueueThreshold) {
+            m_estimatedBW[prefix] = dataArrivalRate;
+        }
+
+        if (dataArrivalRate > m_estimatedBW[prefix]) {
+            m_estimatedBW[prefix] = dataArrivalRate;
+        }        
+    }
+
+    NS_LOG_INFO("Flow: " << prefix << 
+                " - Average QSF: " << aveQSF << 
+                ", Arrival Rate: " << dataArrivalRate * 1000 << 
+                " pkgs/ms, Bandwidth estimation: " << m_estimatedBW[prefix] * 1000 << " pkgs/ms");
+}
+
+
+
+/**
+ * Update each flow's rate limit.
+ */
+void
+Consumer::RateLimitUpdate(std::string prefix)
+{
+    double qsf = m_qsfSlidingWindows[prefix].GetAverageQsf();
+    NS_LOG_INFO("Flow " << prefix << " - qsf: " << qsf);
+        
+    // Congestion control
+    if (m_estimatedBW[prefix] != 0) {
+        if (qsf > 2 * m_qsfQueueThreshold) {
+            m_rateLimit[prefix] = m_estimatedBW[prefix] * m_qsfMDFactor;
+            NS_LOG_INFO("Congestion detected. Update rate limit: " << m_rateLimit[prefix] * 1000 << " pkgs/ms");
+        } else {
+            m_rateLimit[prefix] = m_estimatedBW[prefix];
+            NS_LOG_INFO("No congestion. Update rate limit by estimated BW: " << m_rateLimit[prefix] * 1000  << " pkgs/ms");
+        }        
+    }
+
+    // Rate probing
+    if (qsf < m_qsfQueueThreshold) {
+        m_rateLimit[prefix] = m_rateLimit[prefix] * m_qsfRPFactor;
+        NS_LOG_INFO("Start rate probing. Updated rate limit: " << m_rateLimit[prefix] * 1000 << " pkgs/ms");
+    }
+    
+    // Error handling
+    if (RTT_estimation_qsf[prefix] == 0) {
+        NS_LOG_INFO("RTT estimation is 0, please check!");
+        Simulator::Stop();
+        return;
+    }
+    
+    NS_LOG_INFO("Flow " << prefix << " - Schedule next rate limit update after " << RTT_estimation_qsf[prefix] / 1000 << " ms");
+    m_rateEvent[prefix] = Simulator::Schedule(MicroSeconds(RTT_estimation_qsf[prefix]), &Consumer::RateLimitUpdate, this, prefix);
+}
+
+
+
+
+
+

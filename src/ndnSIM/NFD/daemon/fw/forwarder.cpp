@@ -38,6 +38,9 @@
 
 #include "face/null-face.hpp"
 
+//! Header added by Yitong
+#include <fstream>
+
 namespace nfd {
 
 NFD_LOG_INIT(Forwarder);
@@ -89,6 +92,9 @@ Forwarder::Forwarder(FaceTable& faceTable)
   });
 
   m_strategyChoice.setDefaultStrategy(getDefaultStrategyName());
+
+  //! Debugging
+  m_qsSlidingWindows = utils::SlidingWindow<double>(ns3::MilliSeconds(20));
 }
 
 Forwarder::~Forwarder() = default;
@@ -96,6 +102,14 @@ Forwarder::~Forwarder() = default;
 void
 Forwarder::onIncomingInterest(const Interest& interest, const FaceEndpoint& ingress)
 {
+  //! Debugging
+  if (ns3::Simulator::Now() >= ns3::Seconds(1) && forwarder_recorder.empty()) {
+    forwarder_recorder = fwdFolderPath + "/fwd_" + getNodeName() + ".txt";
+    OpenFile(forwarder_recorder);
+    NFD_LOG_INFO("Forwarder " << getNodeName() << ": recorder path - " << forwarder_recorder<< " is created");
+  }
+
+
   // receive Interest
   NFD_LOG_DEBUG("onIncomingInterest in=" << ingress << " interest=" << interest.getName());
   interest.setTag(make_shared<lp::IncomingFaceIdTag>(ingress.face.getId()));
@@ -322,6 +336,22 @@ Forwarder::onIncomingData(const Data& data, const FaceEndpoint& ingress)
     // drop
     return;
   }
+
+
+  //! By Yitong, add throughput measurement in forwarder
+  if (ns3::Simulator::Now() >= ns3::Seconds(1) && !forwarder_recorder.empty()) {
+    size_t dataSize = data.wireEncode().size();
+    ns3::Time currentTime = ns3::Simulator::Now();
+  
+    m_qsSlidingWindows.AddPacket(currentTime, 0);
+  
+    double rawThroughput = 1000 * GetDataRate(); // Current unit: pkgs/ms
+    ThroughputRecorder();
+  
+    NS_LOG_INFO("Forwarder " << getNodeName() << ": raw throughput is " << rawThroughput << " pkgs/ms");
+  }
+
+
 
   // PIT match
   pit::DataMatchResult pitMatches = m_pit.findAllDataMatches(data);
@@ -643,6 +673,65 @@ Forwarder::processConfig(const ConfigSection& configSection, bool isDryRun, cons
   if (!isDryRun) {
     m_config = config;
   }
+}
+
+
+
+//! Debugging
+double
+Forwarder::GetDataRate()
+{
+  double rawDataRate = m_qsSlidingWindows.GetDataArrivalRate();
+
+  // "0": sliding window size is less than one, keep init rate as data arrival rate; "-1" indicates error
+  if (rawDataRate == -1) {
+      NS_LOG_INFO("Returned data arrival rate is -1, please check!");
+      return 0.0;  
+  } else if (rawDataRate == 0) {       
+      NS_LOG_INFO("Sliding window is not enough, use 0 as data arrival rate: " << " 0 pkgs/ms");
+      return 0.0;
+  } else {
+      return rawDataRate;
+  }
+}
+
+
+
+void
+Forwarder::OpenFile(const std::string& filename)
+{
+    std::ofstream file(filename, std::ofstream::out | std::ofstream::trunc);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open the file: " << filename << std::endl;
+    }
+    // ToDo: for testing, delete later
+    else {
+        //std::cout << "Open " << filename << " successfully!" << std::endl;
+    }
+    file.close();
+}
+
+
+
+void
+Forwarder::ThroughputRecorder()
+{
+    // Open throughput recorder
+    std::ofstream file(forwarder_recorder, std::ios::app);
+
+    if (!file.is_open()) {
+        std::cerr << "Failed to open the file: " << forwarder_recorder << std::endl;
+        return;
+    }
+
+    // Write the throughput to the file, followed by a newline
+    //* Note that throughput is transferred into Mbps
+    file << ns3::Simulator::Now().GetMicroSeconds() << " " 
+         << GetDataRate() * 1000000 * 8 * 8 * 150 / 1000000 << " " 
+         << std::endl;
+
+    // Close the file
+    file.close();
 }
 
 } // namespace nfd

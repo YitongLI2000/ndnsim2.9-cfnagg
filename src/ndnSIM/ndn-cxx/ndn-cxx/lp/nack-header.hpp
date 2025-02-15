@@ -38,7 +38,8 @@ enum class NackReason {
   NONE = 0,
   CONGESTION = 50,
   DUPLICATE = 100,
-  NO_ROUTE = 150
+  NO_ROUTE = 150,
+  QUEUE_OVERFLOW = 200
 };
 
 std::ostream&

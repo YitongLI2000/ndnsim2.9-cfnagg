@@ -1,3 +1,8 @@
+src/ndnSIM/results/
+src/ndnSIM/hyperparam_search
+src/ndnSIM/experiments/old files
+src/ndnSIM/experiments/old graph generator
+
 *.diff
 *.orig
 *.patch
